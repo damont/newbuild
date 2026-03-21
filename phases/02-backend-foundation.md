@@ -20,6 +20,7 @@ from beanie import init_beanie
 
 from api.config import get_settings
 from api.schemas.orm.user import User
+from api.schemas.orm.password_reset import PasswordResetToken
 from api.routes import auth
 
 logging.basicConfig(
@@ -35,7 +36,7 @@ async def lifespan(app: FastAPI):
     client = AsyncIOMotorClient(settings.mongodb_url)
     await init_beanie(
         database=client[settings.mongodb_db_name],
-        document_models=[User],  # Add all Beanie documents here as they're created
+        document_models=[User, PasswordResetToken],  # Add all Beanie documents here as they're created
     )
     logger.info("Connected to MongoDB database: %s", settings.mongodb_db_name)
     yield
@@ -77,9 +78,10 @@ from beanie import Document, Indexed
 from pydantic import Field
 
 class User(Document):
-    username: Indexed(str, unique=True)
     email: Indexed(str, unique=True)
+    display_name: str
     hashed_password: str
+    is_active: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -155,15 +157,15 @@ Ensure `api/utils/__init__.py` exists (empty file).
 Create `api/schemas/dto/auth.py`:
 
 ```python
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 class RegisterRequest(BaseModel):
-    username: str
-    email: str
+    name: str
+    email: EmailStr
     password: str
 
 class LoginRequest(BaseModel):
-    username: str
+    email: EmailStr
     password: str
 
 class TokenResponse(BaseModel):
@@ -172,8 +174,18 @@ class TokenResponse(BaseModel):
 
 class UserResponse(BaseModel):
     id: str
-    username: str
+    name: str
     email: str
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
+
+class MessageResponse(BaseModel):
+    message: str
 ```
 
 Ensure `api/schemas/dto/__init__.py` exists (empty file).
@@ -185,43 +197,197 @@ Ensure `api/schemas/dto/__init__.py` exists (empty file).
 Create `api/routes/auth.py`:
 
 ```python
-from fastapi import APIRouter, Depends, HTTPException
-from api.schemas.orm.user import User
-from api.schemas.dto.auth import RegisterRequest, LoginRequest, TokenResponse, UserResponse
-from api.utils.auth import hash_password, verify_password, create_access_token, get_current_user
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 
+from fastapi import APIRouter, Depends, HTTPException
+from api.config import get_settings
+from api.schemas.orm.user import User
+from api.schemas.orm.password_reset import PasswordResetToken
+from api.schemas.dto.auth import (
+    RegisterRequest, LoginRequest, TokenResponse, UserResponse,
+    PasswordResetRequest, PasswordResetConfirm, MessageResponse,
+)
+from api.utils.auth import hash_password, verify_password, create_access_token, get_current_user
+from api.services.email import send_password_reset_email
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/register", response_model=UserResponse, status_code=201)
 async def register(data: RegisterRequest):
-    existing = await User.find_one(User.username == data.username)
-    if existing:
-        raise HTTPException(status_code=409, detail="Username already taken")
     existing_email = await User.find_one(User.email == data.email)
     if existing_email:
         raise HTTPException(status_code=409, detail="Email already registered")
     user = User(
-        username=data.username,
         email=data.email,
+        display_name=data.name,
         hashed_password=hash_password(data.password),
     )
     await user.insert()
-    return UserResponse(id=str(user.id), username=user.username, email=user.email)
+    return UserResponse(id=str(user.id), name=user.display_name, email=user.email)
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest):
-    user = await User.find_one(User.username == data.username)
+    user = await User.find_one(User.email == data.email)
     if not user or not verify_password(data.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     token = create_access_token(str(user.id))
     return TokenResponse(access_token=token)
 
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(data: PasswordResetRequest):
+    settings = get_settings()
+    message = "If that email is registered, a reset link has been sent."
+
+    user = await User.find_one(User.email == data.email)
+    if not user:
+        return MessageResponse(message=message)
+
+    # Invalidate any existing unused tokens for this user
+    user_id = str(user.id)
+    existing = await PasswordResetToken.find(
+        PasswordResetToken.user_id == user_id,
+        PasswordResetToken.used_at == None,  # noqa: E711
+    ).to_list()
+    for t in existing:
+        t.used_at = datetime.now(timezone.utc)
+        await t.save()
+
+    # Generate new token
+    token = secrets.token_urlsafe(16)
+    reset_token = PasswordResetToken(
+        token=token,
+        user_id=user_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_expire_minutes),
+    )
+    await reset_token.insert()
+
+    reset_url = f"{settings.frontend_base_url}/reset-password/{token}"
+    try:
+        await send_password_reset_email(data.email, reset_url)
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", data.email)
+
+    return MessageResponse(message=message)
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(data: PasswordResetConfirm):
+    reset_token = await PasswordResetToken.find_one(PasswordResetToken.token == data.token)
+
+    if not reset_token or reset_token.used_at or reset_token.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+
+    user = await User.get(reset_token.user_id)
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+
+    # Mark token as used first
+    reset_token.used_at = datetime.now(timezone.utc)
+    await reset_token.save()
+
+    # Update password
+    user.hashed_password = hash_password(data.new_password)
+    await user.save()
+
+    return MessageResponse(message="Password has been reset. You can now sign in.")
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(user=Depends(get_current_user)):
-    return UserResponse(id=str(user.id), username=user.username, email=user.email)
+    return UserResponse(id=str(user.id), name=user.display_name, email=user.email)
 ```
 
 Ensure `api/routes/__init__.py` exists (empty file).
+
+---
+
+## Password Reset Token Model
+
+Create `api/schemas/orm/password_reset.py`:
+
+```python
+from datetime import datetime, timezone
+from typing import Optional
+from beanie import Document, Indexed
+from pydantic import Field
+
+class PasswordResetToken(Document):
+    token: Indexed(str, unique=True)
+    user_id: Indexed(str)
+    expires_at: datetime
+    used_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class Settings:
+        name = "password_reset_tokens"
+```
+
+Register this model in `api/main.py` alongside the User model:
+
+```python
+document_models=[User, PasswordResetToken],  # Add all Beanie documents here
+```
+
+---
+
+## Email Service
+
+Create `api/services/email.py`:
+
+```python
+import asyncio
+import logging
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+from api.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+async def send_password_reset_email(to_email: str, reset_url: str) -> None:
+    settings = get_settings()
+
+    if not settings.smtp_email or not settings.smtp_app_password:
+        if "localhost" in settings.frontend_base_url:
+            logger.warning("SMTP not configured — logging reset link (dev only)")
+            logger.info("Password reset link for %s: %s", to_email, reset_url)
+            return
+        raise RuntimeError("SMTP not configured")
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset Your Password"
+    msg["From"] = settings.smtp_email
+    msg["To"] = to_email
+
+    text = f"Reset your password by visiting: {reset_url}\n\nThis link expires in 1 hour."
+    html = f"""\
+<html><body>
+<h2>Reset Your Password</h2>
+<p>Click the link below to reset your password:</p>
+<p><a href="{reset_url}">Reset Password</a></p>
+<p>This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>
+</body></html>"""
+
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    def _send():
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+            server.starttls()
+            server.login(settings.smtp_email, settings.smtp_app_password)
+            server.sendmail(settings.smtp_email, to_email, msg.as_string())
+
+    await asyncio.to_thread(_send)
+```
+
+Key points:
+- SMTP runs in `asyncio.to_thread()` to avoid blocking the event loop
+- In dev (localhost), logs the reset link to console if SMTP isn't configured
+- In production, raises an error if SMTP isn't configured (caught by the route's try/except)
+
+Ensure `api/services/__init__.py` exists (empty file).
 
 ---
 
@@ -242,16 +408,26 @@ curl http://localhost:8020/api/health
 # Register
 curl -X POST http://localhost:8020/api/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username":"testuser","email":"test@example.com","password":"testpass123"}'
+  -d '{"name":"Test User","email":"test@example.com","password":"testpass123"}'
 
 # Login
 curl -X POST http://localhost:8020/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"testpass123"}'
+  -d '{"email":"test@example.com","password":"testpass123"}'
 
 # Get current user (use the token from login response)
 curl http://localhost:8020/api/auth/me \
   -H "Authorization: Bearer <token>"
+
+# Forgot password (check server console for the reset link in dev)
+curl -X POST http://localhost:8020/api/auth/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com"}'
+
+# Reset password (use the token from the reset link)
+curl -X POST http://localhost:8020/api/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<token-from-reset-link>","new_password":"newpass123"}'
 ```
 
 ---
@@ -259,10 +435,14 @@ curl http://localhost:8020/api/auth/me \
 ## Checklist
 
 - [ ] `api/main.py` created with lifespan, CORS, health check
-- [ ] `api/schemas/orm/user.py` — User document model
+- [ ] `api/schemas/orm/user.py` — User document model (email, display_name, hashed_password)
+- [ ] `api/schemas/orm/password_reset.py` — PasswordResetToken document model
 - [ ] `api/utils/auth.py` — password hashing, JWT, get_current_user
-- [ ] `api/schemas/dto/auth.py` — request/response models
-- [ ] `api/routes/auth.py` — register, login, /me
+- [ ] `api/schemas/dto/auth.py` — request/response models (including password reset DTOs)
+- [ ] `api/routes/auth.py` — register, login, forgot-password, reset-password, /me
+- [ ] `api/services/email.py` — send_password_reset_email (Gmail SMTP)
 - [ ] All `__init__.py` files in place
 - [ ] `curl /api/health` returns `{"status": "ok"}`
 - [ ] Can register a user, login, and call `/api/auth/me` with the token
+- [ ] Forgot password sends reset link (logged to console in dev, emailed in production)
+- [ ] Reset password with valid token updates the password

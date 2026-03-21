@@ -251,7 +251,7 @@ interface AuthContextType {
   isAuthenticated: boolean
   isLoading: boolean
   user: User | null
-  login: (username: string, password: string) => Promise<void>
+  login: (email: string, password: string) => Promise<void>
   logout: () => void
 }
 
@@ -272,8 +272,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = async (username: string, password: string) => {
-    const res = await api.post<{ access_token: string }>('/api/auth/login', { username, password })
+  const login = async (email: string, password: string) => {
+    const res = await api.post<{ access_token: string }>('/api/auth/login', { email, password })
     api.setToken(res.access_token)
     const userData = await api.get<User>('/api/auth/me')
     setUser(userData)
@@ -358,7 +358,7 @@ Create `frontend/src/types/index.ts`:
 ```typescript
 export interface User {
   id: string
-  username: string
+  name: string
   email: string
 }
 
@@ -397,7 +397,7 @@ Create `frontend/src/App.tsx`:
 ```typescript
 import { useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
-import { useRouter } from './hooks/useRouter'
+import { useRouter, matchPath } from './hooks/useRouter'
 
 // Define your app's views here
 type View = 'items' | 'settings'
@@ -419,12 +419,17 @@ export default function App() {
     }
   }, [isLoading, user, path, navigate])
 
+  const resetMatch = matchPath('/reset-password/:token', path)
+  const resetToken = resetMatch?.token ?? null
+
   // Redirect unauthenticated users on protected paths to /
   useEffect(() => {
-    if (!isLoading && !user && path !== '/' && path !== '/login' && path !== '/register') {
-      navigate('/', true)
+    if (!isLoading && !user && !resetToken) {
+      if (path !== '/' && path !== '/login' && path !== '/register' && path !== '/forgot-password') {
+        navigate('/', true)
+      }
     }
-  }, [isLoading, user, path, navigate])
+  }, [isLoading, user, path, resetToken, navigate])
 
   if (isLoading) {
     return (
@@ -436,6 +441,12 @@ export default function App() {
 
   // Unauthenticated views
   if (!user) {
+    if (resetToken) {
+      return <div>Reset password page (build in Phase 06)</div>
+    }
+    if (path === '/forgot-password') {
+      return <div>Forgot password page (build in Phase 06)</div>
+    }
     if (path === '/register') {
       return <div>Register page (build in Phase 06)</div>
     }
@@ -449,7 +460,7 @@ export default function App() {
       <header className="bg-[var(--header-bg)] border-b border-[var(--border-color)] px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">My App</h1>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-[var(--text-secondary)]">{user.username}</span>
+          <span className="text-sm text-[var(--text-secondary)]">{user.name}</span>
           <button
             onClick={logout}
             className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"

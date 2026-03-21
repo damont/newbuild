@@ -61,10 +61,13 @@ Create this directory layout:
 │   │   └── <resource>.py    # One file per resource
 │   ├── schemas/
 │   │   ├── orm/             # Beanie Document models (database shape)
+│   │   │   ├── user.py
+│   │   │   ├── password_reset.py
 │   │   │   └── <model>.py
 │   │   └── dto/             # Request/response Pydantic models
 │   │       └── <model>.py
-│   ├── services/            # Business logic (optional, use when routes get complex)
+│   ├── services/            # Business logic
+│   │   ├── email.py         # SMTP email service (password reset)
 │   │   └── <service>.py
 │   └── utils/
 │       └── auth.py          # JWT creation/validation, password hashing
@@ -82,7 +85,7 @@ Create this directory layout:
 │   │   ├── types/
 │   │   │   └── index.ts
 │   │   └── components/
-│   │       ├── auth/
+│   │       ├── auth/        # Login, Register, ForgotPassword, ResetPassword, LandingPage
 │   │       ├── layout/
 │   │       └── <feature>/
 │   ├── index.html
@@ -151,6 +154,7 @@ uv sync
 Create `api/config.py`:
 
 ```python
+from typing import Optional
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -162,6 +166,16 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 10080  # 7 days
+
+    # Email / SMTP (Gmail — for password reset)
+    smtp_email: Optional[str] = None
+    smtp_app_password: Optional[str] = None
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    password_reset_expire_minutes: int = 60
+
+    # Frontend base URL (used in email links)
+    frontend_base_url: str = "http://localhost:8095"
 
 @lru_cache
 def get_settings() -> Settings:
@@ -182,9 +196,21 @@ MONGODB_DB_NAME=myapp
 JWT_SECRET=change-me-in-production
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=10080
+
+# Email / SMTP (Gmail — for password reset emails)
+SMTP_EMAIL=your-email@gmail.com
+SMTP_APP_PASSWORD=your-app-password
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+PASSWORD_RESET_EXPIRE_MINUTES=60
+
+# Frontend base URL (used in password reset email links)
+FRONTEND_BASE_URL=http://localhost:8095
 ```
 
 Copy to `.env` and fill in real values. Add `.env` to `.gitignore`.
+
+**Gmail App Password setup:** Go to Google Account > Security > 2-Step Verification > App Passwords, generate one for your app. For deployment, add `SMTP_EMAIL` and `SMTP_APP_PASSWORD` as GitHub Secrets.
 
 ---
 

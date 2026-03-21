@@ -283,17 +283,34 @@ Key patterns:
 
 ### Secret Management
 
-Secrets flow from GitHub to containers:
+Secrets flow from GitHub to containers through all four layers:
 
 ```
 GitHub Environment Secret (e.g., MONGODB_URL on "production")
-  → Workflow job: `environment: production`
-  → env: TF_VAR_mongodb_url: ${{ secrets.MONGODB_URL }}
+  → Workflow env: TF_VAR_mongodb_url: ${{ secrets.MONGODB_URL }}
   → Terraform variable "mongodb_url" (sensitive)
-  → azurerm_container_group secure_environment_variables
+  → azurerm_container_group secure_environment_variables: MONGODB_URL = var.mongodb_url
   → Container env var MONGODB_URL
   → Python pydantic-settings: Settings.mongodb_url
 ```
+
+**All four layers must be wired up** for a secret to reach the container. If you add a new secret (e.g., `SMTP_EMAIL`), you need to update:
+1. GitHub Secrets — add the value
+2. Workflow `.yml` — add `TF_VAR_smtp_email: ${{ secrets.SMTP_EMAIL }}`
+3. `variables.tf` — add `variable "smtp_email" { type = string; sensitive = true }`
+4. `main.tf` — add `SMTP_EMAIL = var.smtp_email` to `secure_environment_variables`
+
+The standard secrets for a new app with email support:
+
+| GitHub Secret | Terraform Variable | Container Env Var |
+|---|---|---|
+| `MONGODB_URL` | `mongodb_url` | `MONGODB_URL` |
+| `JWT_SECRET` | `jwt_secret` | `JWT_SECRET` |
+| `AZURE_STORAGE_CONNECTION_STRING` | `azure_storage_connection_string` | `AZURE_STORAGE_CONNECTION_STRING` |
+| `SMTP_EMAIL` | `smtp_email` | `SMTP_EMAIL` |
+| `SMTP_APP_PASSWORD` | `smtp_app_password` | `SMTP_APP_PASSWORD` |
+| `FEEDBACK_GITHUB_TOKEN` | `feedback_github_token` | `FEEDBACK_GITHUB_TOKEN` |
+| `ACR_PASSWORD` | `acr_password` | _(used in image_registry_credential)_ |
 
 ### GitHub Actions Workflows
 
@@ -321,7 +338,7 @@ GitHub Environment Secret (e.g., MONGODB_URL on "production")
 
 1. Create Terraform state storage account
 2. Create a service principal for GitHub Actions
-3. Create GitHub Environments (`production`, `development`) with secrets
+3. Create GitHub Environments (`production`, `development`) with secrets (including `SMTP_EMAIL` and `SMTP_APP_PASSWORD` for password reset emails — see Phase 01 for Gmail App Password setup)
 4. Create `infra/` directory with Terraform files
 5. Import existing resources into Terraform state (if any)
 

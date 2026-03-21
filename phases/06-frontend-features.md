@@ -12,7 +12,7 @@ Group components by feature, not by type:
 
 ```
 components/
-├── auth/           # Login.tsx, Register.tsx, LandingPage.tsx
+├── auth/           # Login.tsx, Register.tsx, ForgotPassword.tsx, ResetPassword.tsx, LandingPage.tsx
 ├── layout/         # AppLayout.tsx, Header.tsx, Sidebar.tsx
 ├── tasks/          # TaskList.tsx, TaskItem.tsx, TaskDetail.tsx
 └── categories/     # CategoryFilter.tsx, CategoryForm.tsx
@@ -41,7 +41,7 @@ import { useRouter } from '../../hooks/useRouter'
 export default function Login() {
   const { login } = useAuth()
   const { navigate } = useRouter()
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
@@ -49,7 +49,7 @@ export default function Login() {
     e.preventDefault()
     setError('')
     try {
-      await login(username, password)
+      await login(email, password)
       navigate('/items', true)
     } catch {
       setError('Invalid credentials')
@@ -62,10 +62,10 @@ export default function Login() {
         <h1 className="text-2xl font-bold text-[var(--text-primary)] text-center">Login</h1>
         {error && <p className="text-[var(--danger)] text-sm text-center">{error}</p>}
         <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
           className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded text-[var(--text-primary)] min-h-[44px] sm:min-h-0"
         />
         <input
@@ -79,8 +79,13 @@ export default function Login() {
           type="submit"
           className="w-full py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium min-h-[44px] sm:min-h-0"
         >
-          Login
+          Sign in
         </button>
+        <p className="text-center text-sm text-[var(--text-secondary)]">
+          <a href="/forgot-password" onClick={e => { e.preventDefault(); navigate('/forgot-password') }} className="text-[var(--accent)]">
+            Forgot password?
+          </a>
+        </p>
         <p className="text-center text-sm text-[var(--text-secondary)]">
           Don't have an account?{' '}
           <a href="/register" onClick={e => { e.preventDefault(); navigate('/register') }} className="text-[var(--accent)]">
@@ -93,7 +98,170 @@ export default function Login() {
 }
 ```
 
-Follow the same pattern for `Register.tsx` and `LandingPage.tsx`.
+Follow the same pattern for `Register.tsx` (with name, email, password fields) and `LandingPage.tsx`.
+
+### ForgotPassword.tsx
+
+```typescript
+// frontend/src/components/auth/ForgotPassword.tsx
+import { useState } from 'react'
+import { useRouter } from '../../hooks/useRouter'
+import { api } from '../../api/client'
+
+export default function ForgotPassword() {
+  const { navigate } = useRouter()
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      await api.post('/api/auth/forgot-password', { email })
+      setSubmitted(true)
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-main)] px-4">
+      <div className="w-full max-w-sm space-y-4">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)] text-center">Reset Password</h1>
+        {submitted ? (
+          <div className="text-center space-y-3">
+            <p className="text-sm text-[var(--text-secondary)]">
+              If that email is registered, you'll receive a password reset link shortly.
+            </p>
+            <a href="/login" onClick={e => { e.preventDefault(); navigate('/login') }} className="text-sm text-[var(--accent)]">
+              Back to sign in
+            </a>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <p className="text-sm text-[var(--text-secondary)] text-center">
+              Enter your email and we'll send you a reset link.
+            </p>
+            {error && <p className="text-[var(--danger)] text-sm text-center">{error}</p>}
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded text-[var(--text-primary)] min-h-[44px] sm:min-h-0"
+              required
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium min-h-[44px] sm:min-h-0 disabled:opacity-50"
+            >
+              {loading ? 'Sending...' : 'Send reset link'}
+            </button>
+            <p className="text-center text-sm">
+              <a href="/login" onClick={e => { e.preventDefault(); navigate('/login') }} className="text-[var(--accent)]">
+                Back to sign in
+              </a>
+            </p>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+```
+
+### ResetPassword.tsx
+
+```typescript
+// frontend/src/components/auth/ResetPassword.tsx
+import { useState } from 'react'
+import { useRouter } from '../../hooks/useRouter'
+import { api } from '../../api/client'
+
+interface ResetPasswordProps {
+  token: string
+}
+
+export default function ResetPassword({ token }: ResetPasswordProps) {
+  const { navigate } = useRouter()
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    setLoading(true)
+    try {
+      await api.post('/api/auth/reset-password', { token, new_password: password })
+      setSuccess(true)
+    } catch {
+      setError('Invalid or expired reset link.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-main)] px-4">
+      <div className="w-full max-w-sm space-y-4">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)] text-center">Set New Password</h1>
+        {success ? (
+          <div className="text-center space-y-3">
+            <p className="text-sm text-[var(--text-secondary)]">Your password has been reset successfully.</p>
+            <a href="/login" onClick={e => { e.preventDefault(); navigate('/login') }} className="text-sm text-[var(--accent)]">
+              Sign in
+            </a>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {error && <p className="text-[var(--danger)] text-sm text-center">{error}</p>}
+            <input
+              type="password"
+              placeholder="New password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded text-[var(--text-primary)] min-h-[44px] sm:min-h-0"
+              minLength={6}
+              required
+              autoFocus
+            />
+            <input
+              type="password"
+              placeholder="Confirm password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              className="w-full px-3 py-2 bg-[var(--bg-surface)] border border-[var(--border-color)] rounded text-[var(--text-primary)] min-h-[44px] sm:min-h-0"
+              minLength={6}
+              required
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white rounded font-medium min-h-[44px] sm:min-h-0 disabled:opacity-50"
+            >
+              {loading ? 'Resetting...' : 'Reset password'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+```
 
 ---
 
@@ -128,7 +296,7 @@ export default function AppLayout({ currentView, children }: AppLayoutProps) {
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-[var(--text-primary)]">My App</h1>
           <div className="flex items-center gap-4">
-            <span className="text-sm text-[var(--text-secondary)]">{user?.username}</span>
+            <span className="text-sm text-[var(--text-secondary)]">{user?.name}</span>
             <button
               onClick={logout}
               className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -281,7 +449,7 @@ return (
 
 ## Checklist
 
-- [ ] Auth components built (Login, Register, LandingPage)
+- [ ] Auth components built (Login, Register, ForgotPassword, ResetPassword, LandingPage)
 - [ ] Layout components built (AppLayout with header and nav)
 - [ ] Feature components organized by feature directory
 - [ ] URL paths designed for all navigable views
