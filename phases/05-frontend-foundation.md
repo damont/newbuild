@@ -400,8 +400,8 @@ import { useAuth } from './context/AuthContext'
 import { useRouter, matchPath } from './hooks/useRouter'
 
 // Define your app's views here
-type View = 'items' | 'settings'
-const VIEWS: View[] = ['items', 'settings']
+type View = 'items' | 'profile'
+const VIEWS: View[] = ['items', 'profile']
 
 function pathToView(path: string): View | null {
   const first = path.split('/').filter(Boolean)[0]
@@ -459,15 +459,13 @@ export default function App() {
     <div className="min-h-screen bg-[var(--bg-main)]">
       <header className="bg-[var(--header-bg)] border-b border-[var(--border-color)] px-4 py-3 flex items-center justify-between">
         <h1 className="text-lg font-semibold text-[var(--text-primary)]">My App</h1>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-[var(--text-secondary)]">{user.name}</span>
-          <button
-            onClick={logout}
-            className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-          >
-            Logout
-          </button>
-        </div>
+        <a
+          href="/profile"
+          onClick={e => { e.preventDefault(); navigate('/profile') }}
+          className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+        >
+          {user.name}
+        </a>
       </header>
       <main className="p-4">
         <p className="text-[var(--text-secondary)]">Current view: {currentView}</p>

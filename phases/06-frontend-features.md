@@ -269,7 +269,7 @@ export default function ResetPassword({ token }: ResetPasswordProps) {
 
 ### AppLayout.tsx
 
-The authenticated app shell with header and optional sidebar/nav:
+The authenticated app shell with header and nav. The user's display name in the top-right is a link to `/profile` — there is no separate settings page. All user configuration lives under the profile page in sub-sections.
 
 ```typescript
 // frontend/src/components/layout/AppLayout.tsx
@@ -281,13 +281,14 @@ interface AppLayoutProps {
   children: React.ReactNode
 }
 
+// Feature nav items only — no "settings" or "profile" here.
+// Profile is accessed via the user's name button in the header.
 const NAV_ITEMS = [
   { key: 'items', label: 'Items' },
-  { key: 'settings', label: 'Settings' },
 ]
 
 export default function AppLayout({ currentView, children }: AppLayoutProps) {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const { navigate } = useRouter()
 
   return (
@@ -295,15 +296,13 @@ export default function AppLayout({ currentView, children }: AppLayoutProps) {
       <header className="bg-[var(--header-bg)] border-b border-[var(--border-color)] px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-[var(--text-primary)]">My App</h1>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-[var(--text-secondary)]">{user?.name}</span>
-            <button
-              onClick={logout}
-              className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            >
-              Logout
-            </button>
-          </div>
+          <a
+            href="/profile"
+            onClick={e => { e.preventDefault(); navigate('/profile') }}
+            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          >
+            {user?.name}
+          </a>
         </div>
         <nav className="flex gap-1 mt-2 overflow-x-auto">
           {NAV_ITEMS.map(item => (
@@ -328,7 +327,73 @@ export default function AppLayout({ currentView, children }: AppLayoutProps) {
 }
 ```
 
-Key pattern for nav links: use `<a>` tags with `href` and `preventDefault`. This enables right-click "Open in new tab", middle-click, and URL on hover.
+Key patterns:
+- Nav links use `<a>` tags with `href` and `preventDefault` — enables right-click "Open in new tab", middle-click, and URL on hover
+- The user's display name is the only way to reach the profile/settings — no "Settings" nav item
+- Logout lives inside the profile page, not the header
+
+### UserProfile.tsx
+
+The profile page contains the user's info and all app settings in sub-sections. No separate settings page — everything is here.
+
+```typescript
+// frontend/src/components/UserProfile.tsx
+import { useAuth } from '../context/AuthContext'
+import { useRouter } from '../hooks/useRouter'
+
+export default function UserProfile() {
+  const { user, logout } = useAuth()
+  const { navigate } = useRouter()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/', true)
+  }
+
+  return (
+    <div className="max-w-lg mx-auto space-y-6">
+      {/* User Info */}
+      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Profile</h2>
+        <div className="space-y-2 text-sm">
+          <div>
+            <span className="text-[var(--text-muted)]">Name</span>
+            <p className="text-[var(--text-primary)]">{user?.name}</p>
+          </div>
+          <div>
+            <span className="text-[var(--text-muted)]">Email</span>
+            <p className="text-[var(--text-primary)]">{user?.email}</p>
+          </div>
+        </div>
+      </section>
+
+      {/* App Settings — add sub-sections here as needed */}
+      {/* Example:
+      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Notifications</h2>
+        ...
+      </section>
+      */}
+
+      {/* Sign Out */}
+      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg p-4">
+        <button
+          onClick={handleLogout}
+          className="w-full py-2 text-sm text-[var(--danger)] hover:bg-[var(--bg-raised)] rounded transition"
+        >
+          Sign out
+        </button>
+      </section>
+    </div>
+  )
+}
+```
+
+Key patterns:
+- Each section is a card (`bg-surface` + `border` + `rounded-lg`)
+- Add new sub-sections (notifications, preferences, etc.) as additional `<section>` cards
+- Logout button lives at the bottom of this page, not in the header
+- Keep `max-w-lg mx-auto` so the profile doesn't stretch on wide screens
 
 ---
 
@@ -342,6 +407,7 @@ Plan URL paths for every navigable state:
 | `/items/new` | Create form |
 | `/items/:id` | Detail view |
 | `/items/:id/edit` | Edit form |
+| `/profile` | User profile & app settings |
 
 ---
 
@@ -430,8 +496,8 @@ function ViewContent({ view }: { view: View }) {
   switch (view) {
     case 'items':
       return <ItemList />
-    case 'settings':
-      return <SettingsPage />
+    case 'profile':
+      return <UserProfile />
     default:
       return null
   }
@@ -450,7 +516,8 @@ return (
 ## Checklist
 
 - [ ] Auth components built (Login, Register, ForgotPassword, ResetPassword, LandingPage)
-- [ ] Layout components built (AppLayout with header and nav)
+- [ ] Layout components built (AppLayout with header, nav, and user name link to profile)
+- [ ] UserProfile component built with sub-sections for settings, sign-out at bottom
 - [ ] Feature components organized by feature directory
 - [ ] URL paths designed for all navigable views
 - [ ] Views derive state from URL, not useState
