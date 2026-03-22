@@ -361,14 +361,26 @@ async def send_password_reset_email(to_email: str, reset_url: str) -> None:
     msg["From"] = settings.smtp_email
     msg["To"] = to_email
 
-    text = f"Reset your password by visiting: {reset_url}\n\nThis link expires in 1 hour."
+    text = f"Reset your password by visiting:\n\n{reset_url}\n\nThis link expires in 1 hour."
     html = f"""\
-<html><body>
-<h2>Reset Your Password</h2>
-<p>Click the link below to reset your password:</p>
-<p><a href="{reset_url}">Reset Password</a></p>
-<p>This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>
-</body></html>"""
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0; padding:20px; font-family:Arial, sans-serif; background-color:#f5f5f5;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; margin:0 auto; background:#ffffff; border-radius:8px; padding:32px;">
+<tr><td>
+<h2 style="margin:0 0 16px 0; color:#333;">Reset Your Password</h2>
+<p style="color:#555; line-height:1.5;">Click the button below to reset your password:</p>
+<p style="text-align:center; margin:24px 0;">
+<a href="{reset_url}" style="display:inline-block; padding:12px 24px; background-color:#4f46e5; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold;">Reset Password</a>
+</p>
+<p style="color:#888; font-size:13px; line-height:1.5;">If the button doesn't work, copy and paste this link into your browser:</p>
+<p style="color:#4f46e5; font-size:13px; word-break:break-all;">{reset_url}</p>
+<p style="color:#888; font-size:13px; margin-top:24px;">This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>
+</td></tr>
+</table>
+</body>
+</html>"""
 
     msg.attach(MIMEText(text, "plain"))
     msg.attach(MIMEText(html, "html"))
@@ -386,6 +398,9 @@ Key points:
 - SMTP runs in `asyncio.to_thread()` to avoid blocking the event loop
 - In dev (localhost), logs the reset link to console if SMTP isn't configured
 - In production, raises an error if SMTP isn't configured (caught by the route's try/except)
+- HTML uses table-based layout with inline styles — Gmail's mobile app strips `<div>` styling but respects tables
+- Includes a styled button for the reset link plus a fallback raw URL below it
+- Proper DOCTYPE/head/meta tags for email client compatibility
 
 Ensure `api/services/__init__.py` exists (empty file).
 
