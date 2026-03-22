@@ -368,7 +368,12 @@ export default function UserProfile() {
         </div>
       </section>
 
-      {/* App Settings — add sub-sections here as needed */}
+      {/*
+        This is the single place for ALL app settings and configuration.
+        Do not create a separate settings page — add sub-sections here.
+        Examples: notifications, display preferences, connected accounts,
+        API tokens, privacy settings, etc.
+      */}
       {/* Example:
       <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg p-4 space-y-3">
         <h2 className="text-lg font-semibold text-[var(--text-primary)]">Notifications</h2>
@@ -381,8 +386,9 @@ export default function UserProfile() {
 ```
 
 Key patterns:
+- **This is the only settings page** — there is no separate `/settings` route. All user preferences, app configuration, and account management live here as sub-sections
 - Each section is a card (`bg-surface` + `border` + `rounded-lg`)
-- Add new sub-sections (notifications, preferences, etc.) as additional `<section>` cards
+- Add new sub-sections (notifications, preferences, API tokens, etc.) as additional `<section>` cards
 - Keep `max-w-lg mx-auto` so the profile doesn't stretch on wide screens
 
 ---
@@ -507,7 +513,7 @@ return (
 
 - [ ] Auth components built (Login, Register, ForgotPassword, ResetPassword, LandingPage)
 - [ ] Layout components built (AppLayout with header, nav, and user name link to profile)
-- [ ] UserProfile component built with sub-sections for settings, sign-out at bottom
+- [ ] UserProfile component built — single place for user info and all app settings (no separate settings page)
 - [ ] Feature components organized by feature directory
 - [ ] URL paths designed for all navigable views
 - [ ] Views derive state from URL, not useState
