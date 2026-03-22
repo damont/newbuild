@@ -269,7 +269,7 @@ export default function ResetPassword({ token }: ResetPasswordProps) {
 
 ### AppLayout.tsx
 
-The authenticated app shell with header and nav. The user's display name in the top-right is a link to `/profile` — there is no separate settings page. All user configuration lives under the profile page in sub-sections.
+The authenticated app shell with header and nav. The top-right of the header has two buttons: the user's display name (navigates to `/profile` for user settings) and a logout button. There is no separate settings page — all user configuration lives under the profile page in sub-sections.
 
 ```typescript
 // frontend/src/components/layout/AppLayout.tsx
@@ -288,7 +288,7 @@ const NAV_ITEMS = [
 ]
 
 export default function AppLayout({ currentView, children }: AppLayoutProps) {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const { navigate } = useRouter()
 
   return (
@@ -296,13 +296,21 @@ export default function AppLayout({ currentView, children }: AppLayoutProps) {
       <header className="bg-[var(--header-bg)] border-b border-[var(--border-color)] px-4 py-3">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold text-[var(--text-primary)]">My App</h1>
-          <a
-            href="/profile"
-            onClick={e => { e.preventDefault(); navigate('/profile') }}
-            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-          >
-            {user?.name}
-          </a>
+          <div className="flex items-center gap-4">
+            <a
+              href="/profile"
+              onClick={e => { e.preventDefault(); navigate('/profile') }}
+              className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            >
+              {user?.name}
+            </a>
+            <button
+              onClick={logout}
+              className="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              Logout
+            </button>
+          </div>
         </div>
         <nav className="flex gap-1 mt-2 overflow-x-auto">
           {NAV_ITEMS.map(item => (
@@ -328,27 +336,20 @@ export default function AppLayout({ currentView, children }: AppLayoutProps) {
 ```
 
 Key patterns:
+- Header top-right: user's display name (links to profile) + logout button — both styled the same
 - Nav links use `<a>` tags with `href` and `preventDefault` — enables right-click "Open in new tab", middle-click, and URL on hover
-- The user's display name is the only way to reach the profile/settings — no "Settings" nav item
-- Logout lives inside the profile page, not the header
+- No "Settings" nav item — profile is accessed via the user's name button
 
 ### UserProfile.tsx
 
-The profile page contains the user's info and all app settings in sub-sections. No separate settings page — everything is here.
+The profile page is the user settings page. It contains the user's info and all app settings in sub-sections. Logout is in the header, not here.
 
 ```typescript
 // frontend/src/components/UserProfile.tsx
 import { useAuth } from '../context/AuthContext'
-import { useRouter } from '../hooks/useRouter'
 
 export default function UserProfile() {
-  const { user, logout } = useAuth()
-  const { navigate } = useRouter()
-
-  const handleLogout = () => {
-    logout()
-    navigate('/', true)
-  }
+  const { user } = useAuth()
 
   return (
     <div className="max-w-lg mx-auto space-y-6">
@@ -374,16 +375,6 @@ export default function UserProfile() {
         ...
       </section>
       */}
-
-      {/* Sign Out */}
-      <section className="bg-[var(--bg-surface)] border border-[var(--border-color)] rounded-lg p-4">
-        <button
-          onClick={handleLogout}
-          className="w-full py-2 text-sm text-[var(--danger)] hover:bg-[var(--bg-raised)] rounded transition"
-        >
-          Sign out
-        </button>
-      </section>
     </div>
   )
 }
@@ -392,7 +383,6 @@ export default function UserProfile() {
 Key patterns:
 - Each section is a card (`bg-surface` + `border` + `rounded-lg`)
 - Add new sub-sections (notifications, preferences, etc.) as additional `<section>` cards
-- Logout button lives at the bottom of this page, not in the header
 - Keep `max-w-lg mx-auto` so the profile doesn't stretch on wide screens
 
 ---
