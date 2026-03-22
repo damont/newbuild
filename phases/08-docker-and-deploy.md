@@ -69,6 +69,11 @@ services:
       - MONGODB_URL=mongodb://host.docker.internal:27017
       - MONGODB_DB_NAME=myapp
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - SMTP_EMAIL=${SMTP_EMAIL:-}
+      - SMTP_APP_PASSWORD=${SMTP_APP_PASSWORD:-}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost:8095}
     restart: unless-stopped
 
   frontend:
