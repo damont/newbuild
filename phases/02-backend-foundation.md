@@ -365,25 +365,25 @@ async def send_password_reset_email(to_email: str, reset_url: str) -> None:
     html = f"""\
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="x-apple-disable-message-reformatting"></head>
 <body style="margin:0; padding:20px; font-family:Arial, sans-serif; background-color:#f5f5f5;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px; margin:0 auto; background:#ffffff; border-radius:8px; padding:32px;">
 <tr><td>
 <h2 style="margin:0 0 16px 0; color:#333;">Reset Your Password</h2>
 <p style="color:#555; line-height:1.5;">Click the button below to reset your password:</p>
 <p style="text-align:center; margin:24px 0;">
-<a href="{reset_url}" style="display:inline-block; padding:12px 24px; background-color:#4f46e5; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold;">Reset Password</a>
+<a href="{reset_url}" target="_blank" style="display:inline-block; padding:12px 24px; background-color:#4f46e5; color:#ffffff; text-decoration:none; border-radius:6px; font-weight:bold;">Reset Password</a>
 </p>
 <p style="color:#888; font-size:13px; line-height:1.5;">If the button doesn't work, copy and paste this link into your browser:</p>
-<p style="color:#4f46e5; font-size:13px; word-break:break-all;">{reset_url}</p>
+<p style="font-size:13px; word-break:break-all;"><a href="{reset_url}" target="_blank" style="color:#4f46e5; text-decoration:underline;">{reset_url}</a></p>
 <p style="color:#888; font-size:13px; margin-top:24px;">This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>
 </td></tr>
 </table>
 </body>
 </html>"""
 
-    msg.attach(MIMEText(text, "plain"))
-    msg.attach(MIMEText(html, "html"))
+    msg.attach(MIMEText(text, "plain", _charset="utf-8"))
+    msg.attach(MIMEText(html, "html", _charset="utf-8"))
 
     def _send():
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
@@ -398,9 +398,16 @@ Key points:
 - SMTP runs in `asyncio.to_thread()` to avoid blocking the event loop
 - In dev (localhost), logs the reset link to console if SMTP isn't configured
 - In production, raises an error if SMTP isn't configured (caught by the route's try/except)
-- HTML uses table-based layout with inline styles — Gmail's mobile app strips `<div>` styling but respects tables
-- Includes a styled button for the reset link plus a fallback raw URL below it
-- Proper DOCTYPE/head/meta tags for email client compatibility
+- Always pass `_charset="utf-8"` to `MIMEText()` — without it, some clients misrender special characters
+
+**Email HTML compatibility (critical — these were discovered through production bugs):**
+- **Table-based layout only** — Gmail's mobile app strips `<div>` and flex/grid styling but respects `<table>` with `role="presentation"`
+- **Inline styles only** — Gmail strips `<style>` blocks and CSS classes entirely; every element needs a `style` attribute
+- **`<meta name="x-apple-disable-message-reformatting">`** — prevents Apple Mail from aggressively reformatting the email layout
+- **`target="_blank"` on ALL links** — Apple iOS Mail won't recognize links as tappable without this attribute
+- **Fallback URL must be a real `<a>` tag** — plain text URLs are not clickable in Apple Mail; always wrap in `<a href="..." target="_blank">` with explicit styling
+- **URL scheme must be present** — Apple Mail doesn't recognize URLs without `https://` as clickable; use a Pydantic field_validator on `frontend_base_url` to auto-prepend the scheme (see config below)
+- Use `word-break:break-all` on fallback URL paragraphs so long tokens don't overflow on mobile
 
 Ensure `api/services/__init__.py` exists (empty file).
 

@@ -156,6 +156,7 @@ Create `api/config.py`:
 ```python
 from typing import Optional
 from functools import lru_cache
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -175,7 +176,15 @@ class Settings(BaseSettings):
     password_reset_expire_minutes: int = 60
 
     # Frontend base URL (used in email links)
-    frontend_base_url: str = "http://localhost:8095"
+    frontend_base_url: str = "https://localhost:8095"
+
+    @field_validator("frontend_base_url")
+    @classmethod
+    def _ensure_scheme(cls, v: str) -> str:
+        """Auto-prepend https:// if no scheme — Apple Mail won't recognize scheme-less URLs as clickable."""
+        if v and not v.startswith(("http://", "https://")):
+            return f"https://{v}"
+        return v
 
 @lru_cache
 def get_settings() -> Settings:
@@ -205,7 +214,7 @@ SMTP_PORT=587
 PASSWORD_RESET_EXPIRE_MINUTES=60
 
 # Frontend base URL (used in password reset email links)
-FRONTEND_BASE_URL=http://localhost:8095
+FRONTEND_BASE_URL=https://localhost:8095
 ```
 
 Copy to `.env` and fill in real values. Add `.env` to `.gitignore`.

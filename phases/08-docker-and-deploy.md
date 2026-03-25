@@ -73,7 +73,8 @@ services:
       - SMTP_APP_PASSWORD=${SMTP_APP_PASSWORD:-}
       - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
       - SMTP_PORT=${SMTP_PORT:-587}
-      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-http://localhost:8095}
+      - PASSWORD_RESET_EXPIRE_MINUTES=${PASSWORD_RESET_EXPIRE_MINUTES:-60}
+      - FRONTEND_BASE_URL=${FRONTEND_BASE_URL:-https://localhost:8095}
     restart: unless-stopped
 
   frontend:
